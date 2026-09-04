@@ -1,0 +1,456 @@
+# Meridian Broking & Capital Services Pvt. Ltd. (MRDN)
+#
+# A Mumbai broker-dealer. Its own order-management ledger (XLSX) is
+# reconciled against two very different external feeds: its clearing bank's
+# account statement (CSV) and the exchange clearing corporation's settlement
+# obligation file (CSV). Column names, date formats and identifier names
+# below are entirely Meridian's own -- nothing here is treated as a universal
+# convention by the engine.
+client_id: MRDN
+config_version: 1
+
+data_sources:
+  - source_id: internal_ledger
+    role: INTERNAL
+    file_format: XLSX
+    sheet_name: Transactions
+    is_required: true
+    field_mappings:
+      - source_field: Trade_ID
+        canonical_field: identifier
+        identifier_type: TRADE_ID
+        data_type: string
+      - source_field: Txn_Reference
+        canonical_field: identifier
+        identifier_type: TRANSACTION_REFERENCE
+        data_type: string
+      - source_field: Posting_Date
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%d"
+        required: true
+      - source_field: Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: Dr_Cr_Indicator
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {D: DEBIT, C: CREDIT}
+      - source_field: Counterparty_Name
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Narration
+        canonical_field: description
+        data_type: string
+      - source_field: Settlement_Batch_Ref
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [TRADE_ID, TRANSACTION_REFERENCE]
+    static_fields: {source_system: MERIDIAN_OMS, currency: INR}
+
+  - source_id: bank_statement
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: "Txn Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+        required: true
+      - source_field: "Value Date"
+        canonical_field: value_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+      - source_field: Debit
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: debit_negative
+      - source_field: Credit
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: credit_positive
+      - source_field: "UTR Number"
+        canonical_field: identifier
+        identifier_type: UTR
+        data_type: string
+      - source_field: "Chq/Ref No"
+        canonical_field: identifier
+        identifier_type: CHEQUE_REF
+        data_type: string
+      - source_field: Description
+        canonical_field: description
+        data_type: string
+      - source_field: "Batch Ref"
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [UTR, CHEQUE_REF]
+    static_fields: {source_system: CLEARING_BANK_STATEMENT, currency: INR}
+
+  # The clearing corporation's end-of-day obligation file. It is delivered by
+  # SFTP and feeds a different batch cycle from the bank statement, which is
+  # why is_required is false here: what a given run needs is declared by the
+  # batch definition, not by the source.
+  - source_id: exchange_obligation
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: "Settlement No"
+        canonical_field: identifier
+        identifier_type: EXCH_SETTLEMENT_NO
+        data_type: string
+      - source_field: "Trade ID"
+        canonical_field: identifier
+        identifier_type: EXCH_TRADE_ID
+        data_type: string
+      - source_field: "Trade Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d-%b-%Y"
+        required: true
+      - source_field: "Settlement Date"
+        canonical_field: settlement_date
+        data_type: date
+        date_format: "%d-%b-%Y"
+      - source_field: "Net Obligation"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: "Clearing Member"
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Remarks
+        canonical_field: description
+        data_type: string
+      - source_field: "Obligation Batch Ref"
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [EXCH_TRADE_ID, EXCH_SETTLEMENT_NO]
+    static_fields: {source_system: EXCHANGE_CLEARING, currency: INR}
+
+  # ICICI's statement layout shares nothing with HDFC's except its meaning.
+  # That is the point: the engine never sees these column names, only the
+  # canonical fields they map onto.
+  - source_id: icici_statement
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: "Transaction Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d-%m-%Y"
+        required: true
+      - source_field: "Value Date"
+        canonical_field: value_date
+        data_type: date
+        date_format: "%d-%m-%Y"
+      - source_field: "Withdrawal Amount (INR)"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: debit_negative
+      - source_field: "Deposit Amount (INR)"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: credit_positive
+      - source_field: "Transaction ID"
+        canonical_field: identifier
+        identifier_type: UTR
+        data_type: string
+      - source_field: "Cheque Number"
+        canonical_field: identifier
+        identifier_type: CHEQUE_REF
+        data_type: string
+      - source_field: "Transaction Remarks"
+        canonical_field: description
+        data_type: string
+      - source_field: "Batch Reference"
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [UTR, CHEQUE_REF]
+    static_fields: {source_system: ICICI_STATEMENT, currency: INR}
+
+  # Treasury's own record of sweeps between Meridian's accounts. One row per
+  # leg, so each leg reconciles against its own bank's statement -- and both
+  # legs are marked INTERNAL_ACCOUNT so the cash position treats the sweep as
+  # redistribution rather than as money leaving the business.
+  - source_id: treasury_ledger
+    role: INTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: Instruction_Ref
+        canonical_field: identifier
+        identifier_type: TRADE_ID
+        data_type: string
+      - source_field: Leg_Date
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%d"
+        required: true
+      - source_field: Leg_Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: Leg_Direction
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {OUT: DEBIT, IN: CREDIT}
+      - source_field: Own_Account
+        canonical_field: account
+        data_type: string
+      - source_field: Other_Account
+        canonical_field: counterparty_account
+        data_type: string
+      - source_field: Counterparty
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Party_Type
+        canonical_field: counterparty_type
+        data_type: string
+      - source_field: Method
+        canonical_field: payment_method
+        data_type: string
+      - source_field: Narrative
+        canonical_field: description
+        data_type: string
+    identifier_priority: [TRADE_ID]
+    static_fields: {source_system: TREASURY, currency: INR}
+
+# A UTR is NOT a Trade ID by nature -- each rule below states a
+# Meridian-specific fact about where an identifier is copied verbatim.
+# Without these, the matching engine would never treat the two as
+# connectable, regardless of both being "identifiers".
+identifier_linkage:
+  - source_identifier_type: UTR
+    target_identifier_type: TRADE_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Meridian's OMS posts the bank-issued UTR verbatim into the Trade_ID
+      column for all electronic (NEFT/RTGS/IMPS/UPI) postings.
+  - source_identifier_type: CHEQUE_REF
+    target_identifier_type: TRANSACTION_REFERENCE
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Meridian's OMS posts the cheque number verbatim into Txn_Reference for
+      CHEQUE/CTS instrument postings.
+  - source_identifier_type: EXCH_TRADE_ID
+    target_identifier_type: TRADE_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      The clearing corporation echoes the member's own trade id back on every
+      obligation line, so the exchange file's Trade ID column and the OMS
+      Trade_ID column carry the same value for the same trade.
+  - source_identifier_type: SETTLEMENT_BATCH_REF
+    target_identifier_type: SETTLEMENT_BATCH_REF
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Reserved for split/batched settlements only: when the bank splits one
+      internal payment instruction across multiple credits (or vice versa),
+      both sides tag the group with the same batch reference. Deliberately
+      excluded from matching_rules.match_on -- see aggregation_rules below --
+      so Pass 1/2 never consume these transactions before the aggregation
+      pass can group them.
+
+normalization_rules:
+  string_rules:
+    - field: counterparty
+      operations: [trim, uppercase, collapse_whitespace]
+  identifier_rules:
+    - identifier_type: UTR
+      operations: [trim, uppercase, strip_non_alphanumeric]
+    - identifier_type: TRADE_ID
+      operations: [trim, uppercase]
+    - identifier_type: EXCH_TRADE_ID
+      operations: [trim, uppercase]
+    - identifier_type: EXCH_SETTLEMENT_NO
+      operations: [trim, uppercase]
+    - identifier_type: CHEQUE_REF
+      operations: [trim, strip_non_alphanumeric]
+    - identifier_type: TRANSACTION_REFERENCE
+      operations: [trim, strip_non_alphanumeric]
+  amount_rules: {decimal_places: 2, rounding: HALF_UP}
+
+# Source-scoped rules come first: both sides' free text mentions settlement
+# wording, so which feed produced the row decides the instrument type before
+# any keyword is consulted.
+classification_rules:
+  - when: {source_id: treasury_ledger}
+    set:
+      instrument_type: INTERNAL_TRANSFER
+      transaction_type: TRANSFER
+      payment_method: INTERNAL_TRANSFER
+      counterparty_type: INTERNAL_ACCOUNT
+  # A sweep seen from the bank's side looks like any other RTGS movement, so
+  # the narration is what identifies it. Marking it INTERNAL_ACCOUNT here is
+  # what keeps both legs out of the cash total.
+  - when: {any_field_contains: "OWN ACCOUNT SWEEP"}
+    set:
+      instrument_type: INTERNAL_TRANSFER
+      transaction_type: TRANSFER
+      payment_method: INTERNAL_TRANSFER
+      counterparty_type: INTERNAL_ACCOUNT
+  - when: {source_id: exchange_obligation}
+    set:
+      instrument_type: EXCH_OBLIGATION
+      transaction_type: SETTLEMENT
+      payment_method: EXCHANGE_SETTLEMENT
+      counterparty_type: CLEARING_HOUSE
+  - when: {source_id: internal_ledger, any_field_contains: "OBLIGATION"}
+    set: {instrument_type: EXCH_PAYOUT, transaction_type: SETTLEMENT}
+  - when: {any_field_contains: "NEFT"}
+    set: {instrument_type: NEFT, transaction_type: PAYMENT, payment_method: NEFT}
+  - when: {any_field_contains: "RTGS"}
+    set: {instrument_type: RTGS, transaction_type: PAYMENT, payment_method: RTGS}
+  - when: {any_field_contains: "IMPS"}
+    set: {instrument_type: IMPS, transaction_type: PAYMENT, payment_method: IMPS}
+  - when: {any_field_contains: "UPI"}
+    set: {instrument_type: UPI, transaction_type: PAYMENT, payment_method: UPI}
+  - when: {any_field_contains: "CHQ"}
+    set: {instrument_type: CHEQUE, transaction_type: PAYMENT, payment_method: CHEQUE}
+  - when: {any_field_contains: "CHARGE"}
+    set: {instrument_type: BANK_CHARGES, transaction_type: FEE, counterparty_type: BANK}
+  - default: true
+    set: {instrument_type: OTHER, transaction_type: PAYMENT}
+
+matching_rules:
+  - rule_id: MRDN_R1_EXACT_REFERENCE
+    pass: 1
+    version: 1
+    match_on:
+      - {left_identifier: UTR, right_identifier: TRADE_ID, comparison: exact}
+      - {left_identifier: CHEQUE_REF, right_identifier: TRANSACTION_REFERENCE, comparison: exact}
+      - {left_identifier: EXCH_TRADE_ID, right_identifier: TRADE_ID, comparison: exact}
+    confidence: 1.0
+  - rule_id: MRDN_R2_NORMALIZED_REFERENCE
+    pass: 2
+    version: 1
+    match_on:
+      - {left_identifier: CHEQUE_REF, right_identifier: TRANSACTION_REFERENCE, comparison: normalized_partial}
+    confidence: 0.9
+  - rule_id: MRDN_R3_AMOUNT_DATE
+    pass: 3
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 0.00}
+      date_field: value_date
+      date_tolerance_days: 2
+    confidence: 0.75
+  - rule_id: MRDN_R4_AMOUNT_COUNTERPARTY_DATE_INSTRUMENT
+    pass: 4
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 1.00}
+      date_field: transaction_date
+      date_tolerance_days: 3
+      counterparty_similarity_threshold: 0.85
+      instrument_type_match: exact
+    confidence: 0.6
+
+tolerance_defaults:
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_tolerance_days: 1
+
+# Pass 5: an exchange payout posted gross in the OMS arrives net of
+# brokerage, GST on brokerage, clearing commission and statutory levies.
+# That gap is checked against this configuration BEFORE it is allowed to
+# become an exception.
+#
+# Honesty note: only the GST rate carries a sourced TaxRule. The brokerage
+# rate is Meridian's own commercial schedule, and the statutory rates below
+# are illustrative prototype figures -- each says so in its own
+# verification_status, and the Tax & Fees window renders that status.
+tax_fee_rules:
+  applicable_when:
+    internal_instrument_type: EXCH_PAYOUT
+    external_instrument_type: EXCH_OBLIGATION
+  fee:
+    rate_percent: 0.03
+    verification_status: PROTOTYPE_ASSUMPTION
+    note: >
+      Illustrative brokerage rate. Brokerage is commercially negotiated per
+      client agreement, not a published regulatory figure -- a real
+      deployment must source this from Meridian's own schedule of charges.
+  tax_on_fee:
+    tax_rule_id: GST_ON_BROKERAGE_V1
+  commission:
+    label: Clearing member commission
+    rate_percent: 0.005
+    minimum_amount: 5.0
+    maximum_amount: null
+    verification_status: PROTOTYPE_ASSUMPTION
+    note: Illustrative clearing-member commission for this prototype.
+  statutory_charges:
+    - code: STT
+      label: Securities Transaction Tax
+      basis: GROSS
+      rate_percent: 0.025
+      enabled: true
+      verification_status: NOT_VERIFIED
+      source_authority: Government of India
+      source_reference: Securities Transaction Tax, Finance (No. 2) Act 2004
+      note: >
+        Rate NOT independently verified during this build and the applicable
+        rate differs by segment and by buy/sell leg. Treat as illustrative.
+    - code: SEBI_TURNOVER_FEE
+      label: SEBI turnover fee
+      basis: GROSS
+      rate_percent: 0.0001
+      enabled: true
+      verification_status: NOT_VERIFIED
+      source_authority: Securities and Exchange Board of India
+      source_reference: SEBI turnover fee schedule
+      note: Rate NOT verified during this build. Illustrative only.
+    - code: EXCH_TXN_CHARGE
+      label: Exchange transaction charges
+      basis: GROSS
+      rate_percent: 0.00297
+      enabled: true
+      verification_status: NOT_VERIFIED
+      source_authority: Exchange
+      source_reference: Exchange transaction charge schedule, cash segment
+      note: Rate NOT verified during this build. Illustrative only.
+    - code: STAMP_DUTY
+      label: Stamp duty
+      basis: GROSS
+      rate_percent: 0.003
+      enabled: true
+      verification_status: NOT_VERIFIED
+      source_authority: Government of India
+      source_reference: Indian Stamp Act, uniform securities stamp duty
+      note: Rate NOT verified during this build. Illustrative only.
+  rounding_tolerance: 0.05
+  date_field: transaction_date
+  date_tolerance_days: 3
+  confidence: 0.8
+
+# Pass 6: groups transactions sharing a SETTLEMENT_BATCH_REF and compares the
+# groups' amount sums -- how 1:N (one internal instruction settled via
+# several bank credits) and N:1 relationships are represented.
+aggregation_rules:
+  identifier_type: SETTLEMENT_BATCH_REF
+  rule_id: MRDN_PASS6_AGGREGATION
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_field: transaction_date
+  date_tolerance_days: 3
+  confidence: 0.75
+
+exception_rules:
+  ageing_thresholds_days: {LOW: 3, MEDIUM: 7, HIGH: 15, CRITICAL: 30}

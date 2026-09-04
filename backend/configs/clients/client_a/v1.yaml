@@ -1,0 +1,205 @@
+# Client A: NBFC-style client whose own ERP (internal ledger, XLSX) must be
+# reconciled against its bank's account statement (CSV). Column names, date
+# formats, and identifier names below are entirely Client A's own -- nothing
+# here is treated as a universal convention by the engine.
+client_id: client_a
+config_version: 1
+
+data_sources:
+  - source_id: internal_ledger
+    role: INTERNAL
+    file_format: XLSX
+    sheet_name: Transactions
+    is_required: true
+    field_mappings:
+      - source_field: Trade_ID
+        canonical_field: identifier
+        identifier_type: TRADE_ID
+        data_type: string
+      - source_field: Txn_Reference
+        canonical_field: identifier
+        identifier_type: TRANSACTION_REFERENCE
+        data_type: string
+      - source_field: Posting_Date
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%d"
+        required: true
+      - source_field: Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: Dr_Cr_Indicator
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {D: DEBIT, C: CREDIT}
+      - source_field: Counterparty_Name
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Narration
+        canonical_field: description
+        data_type: string
+      - source_field: Settlement_Batch_Ref
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [TRADE_ID, TRANSACTION_REFERENCE]
+    static_fields: {source_system: INTERNAL_ERP, currency: INR}
+
+  - source_id: bank_statement
+    role: EXTERNAL
+    file_format: CSV
+    is_required: true
+    field_mappings:
+      - source_field: "Txn Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+        required: true
+      - source_field: "Value Date"
+        canonical_field: value_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+      - source_field: Debit
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: debit_negative
+      - source_field: Credit
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: credit_positive
+      - source_field: "UTR Number"
+        canonical_field: identifier
+        identifier_type: UTR
+        data_type: string
+      - source_field: "Chq/Ref No"
+        canonical_field: identifier
+        identifier_type: CHEQUE_REF
+        data_type: string
+      - source_field: Description
+        canonical_field: description
+        data_type: string
+      - source_field: "Batch Ref"
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [UTR, CHEQUE_REF]
+    static_fields: {source_system: BANK_STATEMENT, currency: INR}
+
+# UTR is NOT a Trade ID by nature -- this rule states the client-specific fact
+# that Client A's ERP happens to copy the bank UTR verbatim into TRADE_ID for
+# electronic postings, and copies cheque numbers into TRANSACTION_REFERENCE
+# for cheque postings. Without these rules, Pass 1/2 would never treat a UTR
+# and a TRADE_ID as connectable, regardless of both being "identifiers".
+identifier_linkage:
+  - source_identifier_type: UTR
+    target_identifier_type: TRADE_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Client A's ERP posts the bank-issued UTR verbatim into the Trade_ID
+      column for all electronic (NEFT/RTGS/IMPS/UPI) postings.
+  - source_identifier_type: CHEQUE_REF
+    target_identifier_type: TRANSACTION_REFERENCE
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Client A's ERP posts the cheque number verbatim into Txn_Reference for
+      CHEQUE/CTS instrument postings.
+  - source_identifier_type: SETTLEMENT_BATCH_REF
+    target_identifier_type: SETTLEMENT_BATCH_REF
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Reserved for split/batched settlements only: when the bank splits one
+      internal payment instruction across multiple credits (or vice versa),
+      both sides tag the group with the same batch reference. Deliberately
+      excluded from matching_rules.match_on -- see aggregation_rules below --
+      so Pass 1/2 never consume these transactions before the aggregation
+      pass (M4) can group them.
+
+normalization_rules:
+  string_rules:
+    - field: counterparty
+      operations: [trim, uppercase, collapse_whitespace]
+  identifier_rules:
+    - identifier_type: UTR
+      operations: [trim, uppercase, strip_non_alphanumeric]
+    - identifier_type: TRADE_ID
+      operations: [trim, uppercase]
+    - identifier_type: CHEQUE_REF
+      operations: [trim, strip_non_alphanumeric]
+    - identifier_type: TRANSACTION_REFERENCE
+      operations: [trim, strip_non_alphanumeric]
+  amount_rules: {decimal_places: 2, rounding: HALF_UP}
+
+classification_rules:
+  - when: {any_field_contains: "NEFT"}
+    set: {instrument_type: NEFT, transaction_type: PAYMENT}
+  - when: {any_field_contains: "RTGS"}
+    set: {instrument_type: RTGS, transaction_type: PAYMENT}
+  - when: {any_field_contains: "IMPS"}
+    set: {instrument_type: IMPS, transaction_type: PAYMENT}
+  - when: {any_field_contains: "UPI"}
+    set: {instrument_type: UPI, transaction_type: PAYMENT}
+  - when: {any_field_contains: "CHQ"}
+    set: {instrument_type: CHEQUE, transaction_type: PAYMENT}
+  - when: {any_field_contains: "CHARGE"}
+    set: {instrument_type: BANK_CHARGES, transaction_type: FEE}
+  - default: true
+    set: {instrument_type: OTHER, transaction_type: PAYMENT}
+
+matching_rules:
+  - rule_id: CLIENT_A_R1_EXACT_REFERENCE
+    pass: 1
+    version: 1
+    match_on:
+      - {left_identifier: UTR, right_identifier: TRADE_ID, comparison: exact}
+      - {left_identifier: CHEQUE_REF, right_identifier: TRANSACTION_REFERENCE, comparison: exact}
+    confidence: 1.0
+  - rule_id: CLIENT_A_R2_NORMALIZED_REFERENCE
+    pass: 2
+    version: 1
+    match_on:
+      - {left_identifier: CHEQUE_REF, right_identifier: TRANSACTION_REFERENCE, comparison: normalized_partial}
+    confidence: 0.9
+  - rule_id: CLIENT_A_R3_AMOUNT_DATE
+    pass: 3
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 0.00}
+      date_field: value_date
+      date_tolerance_days: 2
+    confidence: 0.75
+  - rule_id: CLIENT_A_R4_AMOUNT_COUNTERPARTY_DATE_INSTRUMENT
+    pass: 4
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 1.00}
+      date_field: transaction_date
+      date_tolerance_days: 3
+      counterparty_similarity_threshold: 0.85
+      instrument_type_match: exact
+    confidence: 0.6
+
+tolerance_defaults:
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_tolerance_days: 1
+
+# Pass 6: groups transactions sharing a SETTLEMENT_BATCH_REF and compares the
+# groups' amount sums -- how 1:N (one internal instruction settled via
+# several bank credits) and N:1 relationships are represented.
+aggregation_rules:
+  identifier_type: SETTLEMENT_BATCH_REF
+  rule_id: CLIENT_A_PASS6_AGGREGATION
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_field: transaction_date
+  date_tolerance_days: 3
+  confidence: 0.75
+
+exception_rules:
+  ageing_thresholds_days: {LOW: 3, MEDIUM: 7, HIGH: 15, CRITICAL: 30}

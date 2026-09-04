@@ -1,0 +1,218 @@
+# Client B: e-commerce-style client settling through a payment gateway. The
+# gateway's own transaction id (PG_TXN_ID) has NO configured linkage to
+# anything on the internal side -- it is deliberately left unlinked to
+# demonstrate that identifiers are never assumed interchangeable just because
+# they are both "an identifier". Only ORDER_ID, which both sides genuinely
+# share, is declared as a linkage.
+client_id: client_b
+config_version: 1
+
+data_sources:
+  - source_id: internal_ledger
+    role: INTERNAL
+    file_format: CSV
+    is_required: true
+    field_mappings:
+      - source_field: InternalRef
+        canonical_field: identifier
+        identifier_type: INTERNAL_REF
+        data_type: string
+      - source_field: OrderId
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: PostedOn
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%d"
+        required: true
+      - source_field: Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: DrCr
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {DR: DEBIT, CR: CREDIT}
+      - source_field: CustomerName
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Notes
+        canonical_field: description
+        data_type: string
+      - source_field: SettlementBatchRef
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [ORDER_ID, INTERNAL_REF]
+    static_fields: {source_system: INTERNAL_LEDGER, currency: INR}
+
+  - source_id: payment_gateway
+    role: EXTERNAL
+    file_format: JSON
+    is_required: true
+    field_mappings:
+      - source_field: gateway_txn_id
+        canonical_field: identifier
+        identifier_type: PG_TXN_ID
+        data_type: string
+      - source_field: order_id
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: settled_at
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%dT%H:%M:%S"
+        required: true
+      - source_field: net_amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: entry_type
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {settlement: CREDIT, refund: DEBIT}
+      - source_field: merchant_name
+        canonical_field: counterparty
+        data_type: string
+      - source_field: remarks
+        canonical_field: description
+        data_type: string
+      - source_field: batch_ref
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [ORDER_ID, PG_TXN_ID]
+    static_fields: {source_system: PAYMENT_GATEWAY, currency: INR}
+
+identifier_linkage:
+  - source_identifier_type: ORDER_ID
+    target_identifier_type: ORDER_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      order_id is issued by Client B's own checkout flow and echoed back
+      unmodified by the payment gateway on every settlement record -- this is
+      the only identifier genuinely shared by both sides.
+  # No linkage rule connects PG_TXN_ID to INTERNAL_REF: the gateway's own
+  # transaction id has no relationship to the internal ledger's reference and
+  # must never be treated as equivalent to it.
+  - source_identifier_type: SETTLEMENT_BATCH_REF
+    target_identifier_type: SETTLEMENT_BATCH_REF
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Reserved for aggregate/batch settlements only, where several internal
+      orders are bundled into one gateway settlement record with no
+      per-order reference. Deliberately excluded from matching_rules.match_on
+      -- see aggregation_rules below -- so Pass 1/2 never consume these
+      transactions before the aggregation pass (M4) can group them.
+
+normalization_rules:
+  string_rules:
+    - field: counterparty
+      operations: [trim, uppercase, collapse_whitespace]
+  identifier_rules:
+    - identifier_type: ORDER_ID
+      operations: [trim, uppercase]
+    - identifier_type: PG_TXN_ID
+      operations: [trim, uppercase]
+    - identifier_type: INTERNAL_REF
+      operations: [trim, uppercase]
+  amount_rules: {decimal_places: 2, rounding: HALF_UP}
+
+# classification is scoped by source_id -- both sides' free text can contain
+# similar words (e.g. "settlement"), so instrument_type must be decided by
+# which data source produced the row, not by keyword alone.
+classification_rules:
+  - when: {source_id: internal_ledger}
+    set: {instrument_type: PAYMENT, transaction_type: PAYMENT}
+  - when: {source_id: payment_gateway, any_field_contains: "settlement"}
+    set: {instrument_type: PAYMENT_GATEWAY_SETTLEMENT, transaction_type: SETTLEMENT}
+  - when: {source_id: payment_gateway, any_field_contains: "refund"}
+    set: {instrument_type: PAYMENT_GATEWAY_SETTLEMENT, transaction_type: REFUND}
+  - default: true
+    set: {instrument_type: PAYMENT_GATEWAY_SETTLEMENT, transaction_type: PAYMENT}
+
+matching_rules:
+  - rule_id: CLIENT_B_R1_EXACT_REFERENCE
+    pass: 1
+    version: 1
+    match_on:
+      - {left_identifier: ORDER_ID, right_identifier: ORDER_ID, comparison: exact}
+    confidence: 1.0
+  - rule_id: CLIENT_B_R2_NORMALIZED_REFERENCE
+    pass: 2
+    version: 1
+    match_on:
+      - {left_identifier: ORDER_ID, right_identifier: ORDER_ID, comparison: normalized_partial}
+    confidence: 0.85
+  - rule_id: CLIENT_B_R3_AMOUNT_DATE
+    pass: 3
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 0.00}
+      date_field: transaction_date
+      date_tolerance_days: 2
+    confidence: 0.7
+  - rule_id: CLIENT_B_R4_AMOUNT_COUNTERPARTY_DATE_INSTRUMENT
+    pass: 4
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 2.00}
+      date_field: transaction_date
+      date_tolerance_days: 3
+      counterparty_similarity_threshold: 0.8
+      # internal_ledger rows are always classified PAYMENT and
+      # payment_gateway rows always PAYMENT_GATEWAY_SETTLEMENT (see
+      # classification_rules above) -- they can never be instrument-equal
+      # across sources for this client, so this condition must be "any".
+      instrument_type_match: any
+    confidence: 0.55
+
+tolerance_defaults:
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_tolerance_days: 2
+
+# Pass 5: a discrepancy between a gross internal amount and a net gateway
+# settlement amount is checked against this configuration BEFORE it is
+# allowed to become an exception. The fee rate is a commercial MDR figure
+# (PROTOTYPE_ASSUMPTION -- see docs/tax-rules.md); the tax-on-fee rate comes
+# from the versioned, sourced TaxRule referenced below.
+tax_fee_rules:
+  applicable_when:
+    internal_instrument_type: PAYMENT
+    external_instrument_type: PAYMENT_GATEWAY_SETTLEMENT
+  fee:
+    rate_percent: 2.0
+    verification_status: PROTOTYPE_ASSUMPTION
+    note: >
+      Illustrative payment-gateway MDR rate for this prototype. MDR is a
+      commercially negotiated rate between merchant and payment aggregator,
+      not a published regulatory figure -- a real deployment must source
+      this from Client B's actual merchant agreement.
+  tax_on_fee:
+    tax_rule_id: GST_ON_PAYMENT_GATEWAY_FEE_V1
+  rounding_tolerance: 0.02
+  date_field: transaction_date
+  date_tolerance_days: 3
+  confidence: 0.8
+
+# Pass 6: groups orders sharing a SETTLEMENT_BATCH_REF and compares the
+# groups' amount sums -- e.g. several customer orders bundled into one daily
+# gateway settlement (N:1).
+aggregation_rules:
+  identifier_type: SETTLEMENT_BATCH_REF
+  rule_id: CLIENT_B_PASS6_AGGREGATION
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_field: transaction_date
+  date_tolerance_days: 2
+  confidence: 0.75
+
+exception_rules:
+  ageing_thresholds_days: {LOW: 3, MEDIUM: 7, HIGH: 15, CRITICAL: 30}

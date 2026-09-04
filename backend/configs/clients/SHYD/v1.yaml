@@ -1,0 +1,402 @@
+# Sahyadri Finserv Ltd. (SHYD)
+#
+# A Pune-based NBFC lending to small merchants. Collections arrive two ways:
+# through a payment aggregator (JSON settlement feed) and through NACH
+# mandate presentations (NPCI-style return file). Both are reconciled against
+# the same internal collections ledger, on different batch cycles.
+#
+# The aggregator's own transaction id (PG_TXN_ID) has NO configured linkage
+# to anything internal -- it is deliberately left unlinked to demonstrate
+# that identifiers are never assumed interchangeable just because they are
+# both "an identifier". Only ORDER_ID, genuinely shared by both sides, is
+# declared as a linkage.
+client_id: SHYD
+config_version: 1
+
+data_sources:
+  - source_id: internal_ledger
+    role: INTERNAL
+    file_format: CSV
+    is_required: true
+    field_mappings:
+      - source_field: InternalRef
+        canonical_field: identifier
+        identifier_type: INTERNAL_REF
+        data_type: string
+      - source_field: OrderId
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: PostedOn
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%d"
+        required: true
+      - source_field: Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: DrCr
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {DR: DEBIT, CR: CREDIT}
+      - source_field: CustomerName
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Notes
+        canonical_field: description
+        data_type: string
+      - source_field: SettlementBatchRef
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [ORDER_ID, INTERNAL_REF]
+    static_fields: {source_system: SAHYADRI_COLLECTIONS, currency: INR}
+
+  - source_id: payment_gateway
+    role: EXTERNAL
+    file_format: JSON
+    is_required: false
+    field_mappings:
+      - source_field: gateway_txn_id
+        canonical_field: identifier
+        identifier_type: PG_TXN_ID
+        data_type: string
+      - source_field: order_id
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: settled_at
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%Y-%m-%dT%H:%M:%S"
+        required: true
+      - source_field: net_amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: entry_type
+        canonical_field: debit_credit
+        data_type: string
+        value_map: {settlement: CREDIT, refund: DEBIT}
+      - source_field: merchant_name
+        canonical_field: counterparty
+        data_type: string
+      - source_field: remarks
+        canonical_field: description
+        data_type: string
+      - source_field: batch_ref
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [ORDER_ID, PG_TXN_ID]
+    static_fields: {source_system: PAYMENT_AGGREGATOR, currency: INR}
+
+  # NACH mandate presentation/return file, delivered as an emailed attachment
+  # by the sponsor bank. Feeds its own batch cycle, hence is_required: false.
+  - source_id: nach_return
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: UMRN
+        canonical_field: identifier
+        identifier_type: NACH_UMRN
+        data_type: string
+      - source_field: "Transaction Ref No"
+        canonical_field: identifier
+        identifier_type: NACH_TXN_REF
+        data_type: string
+      - source_field: "Presentation Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+        required: true
+      - source_field: "Settlement Date"
+        canonical_field: settlement_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+      - source_field: Amount
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: "Debit Account Holder"
+        canonical_field: counterparty
+        data_type: string
+      - source_field: Status
+        canonical_field: status
+        data_type: string
+      - source_field: "Return Reason"
+        canonical_field: description
+        data_type: string
+    identifier_priority: [NACH_TXN_REF, NACH_UMRN]
+    static_fields: {source_system: NACH_SPONSOR_BANK, currency: INR}
+
+  # Sahyadri's collections bank. Settlement credits from the aggregator land
+  # here, which is what makes Settlement <-> Bank a separate proof from
+  # Payments <-> Settlement.
+  - source_id: bank_statement
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: "Tran Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+        required: true
+      - source_field: "Value Date"
+        canonical_field: value_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+      - source_field: "Withdrawal Amt"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: debit_negative
+      - source_field: "Deposit Amt"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: credit_positive
+      - source_field: "Chq/Ref No"
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: Narration
+        canonical_field: description
+        data_type: string
+      - source_field: "Settlement Ref"
+        canonical_field: identifier
+        identifier_type: SETTLEMENT_BATCH_REF
+        data_type: string
+    identifier_priority: [ORDER_ID]
+    static_fields: {source_system: HDFC_STATEMENT, currency: INR}
+
+  # Tax challans. A GST or TDS liability is discharged by a challan and a
+  # matching bank debit -- the challan number (CIN) is the natural key, not
+  # the amount, because a period's liability can be paid in several challans.
+  - source_id: tax_challan
+    role: EXTERNAL
+    file_format: CSV
+    is_required: false
+    field_mappings:
+      - source_field: "Challan Number"
+        canonical_field: identifier
+        identifier_type: CHALLAN_NO
+        data_type: string
+      - source_field: "Payment Date"
+        canonical_field: transaction_date
+        data_type: date
+        date_format: "%d/%m/%Y"
+        required: true
+      - source_field: "Amount Paid"
+        canonical_field: amount
+        data_type: decimal
+        sign_convention: signed
+        required: true
+      - source_field: "Tax Type"
+        canonical_field: counterparty
+        data_type: string
+      - source_field: "Bank Reference"
+        canonical_field: identifier
+        identifier_type: ORDER_ID
+        data_type: string
+      - source_field: Remarks
+        canonical_field: description
+        data_type: string
+    identifier_priority: [CHALLAN_NO, ORDER_ID]
+    static_fields: {source_system: TAX_PORTAL, currency: INR}
+
+identifier_linkage:
+  - source_identifier_type: ORDER_ID
+    target_identifier_type: ORDER_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      order_id is issued by Sahyadri's own collections engine and echoed back
+      unmodified by the payment aggregator on every settlement record -- this
+      is the only identifier genuinely shared by both sides.
+  # No linkage rule connects PG_TXN_ID to INTERNAL_REF: the aggregator's own
+  # transaction id has no relationship to the internal ledger's reference and
+  # must never be treated as equivalent to it.
+  - source_identifier_type: NACH_TXN_REF
+    target_identifier_type: ORDER_ID
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Sahyadri's collections engine stamps its own collection instruction id
+      into the NACH transaction reference field when the mandate is
+      presented, so the sponsor bank's return file carries it back verbatim.
+      The UMRN is the mandate's identity, not the instruction's, and is
+      therefore deliberately NOT linked to anything internal.
+  - source_identifier_type: SETTLEMENT_BATCH_REF
+    target_identifier_type: SETTLEMENT_BATCH_REF
+    linkage_type: DIRECT_EQUIVALENT
+    transform: none
+    confidence: 1.0
+    rationale: >
+      Reserved for aggregate/batch settlements only, where several internal
+      collections are bundled into one aggregator settlement record with no
+      per-order reference. Deliberately excluded from matching_rules.match_on
+      -- see aggregation_rules below -- so Pass 1/2 never consume these
+      transactions before the aggregation pass can group them.
+
+normalization_rules:
+  string_rules:
+    - field: counterparty
+      operations: [trim, uppercase, collapse_whitespace]
+  identifier_rules:
+    - identifier_type: ORDER_ID
+      operations: [trim, uppercase]
+    - identifier_type: PG_TXN_ID
+      operations: [trim, uppercase]
+    - identifier_type: INTERNAL_REF
+      operations: [trim, uppercase]
+    - identifier_type: NACH_TXN_REF
+      operations: [trim, uppercase]
+    - identifier_type: NACH_UMRN
+      operations: [trim, uppercase]
+    - identifier_type: CHALLAN_NO
+      operations: [trim, uppercase]
+  amount_rules: {decimal_places: 2, rounding: HALF_UP}
+
+# classification is scoped by source_id -- all three feeds' free text can
+# contain similar words, so instrument_type must be decided by which data
+# source produced the row, not by keyword alone.
+classification_rules:
+  - when: {source_id: tax_challan}
+    set:
+      instrument_type: TAX_PAYMENT
+      transaction_type: TAX_PAYMENT
+      payment_method: TAX_PAYMENT
+      counterparty_type: TAX_AUTHORITY
+  - when: {source_id: nach_return}
+    set:
+      instrument_type: NACH_COLLECTION
+      transaction_type: COLLECTION
+      payment_method: NACH
+      counterparty_type: CUSTOMER
+  - when: {source_id: bank_statement}
+    set:
+      instrument_type: BANK_CREDIT
+      transaction_type: SETTLEMENT
+      payment_method: NEFT
+      counterparty_type: PAYMENT_AGGREGATOR
+  - when: {source_id: internal_ledger}
+    set:
+      instrument_type: PAYMENT
+      transaction_type: PAYMENT
+      counterparty_type: CUSTOMER
+  - when: {source_id: payment_gateway, any_field_contains: "settlement"}
+    set:
+      instrument_type: PAYMENT_GATEWAY_SETTLEMENT
+      transaction_type: SETTLEMENT
+      payment_method: PAYMENT_GATEWAY
+      counterparty_type: PAYMENT_AGGREGATOR
+  - when: {source_id: payment_gateway, any_field_contains: "refund"}
+    set:
+      instrument_type: PAYMENT_GATEWAY_SETTLEMENT
+      transaction_type: REFUND
+      payment_method: PAYMENT_GATEWAY
+      counterparty_type: PAYMENT_AGGREGATOR
+  - default: true
+    set: {instrument_type: PAYMENT_GATEWAY_SETTLEMENT, transaction_type: PAYMENT}
+
+matching_rules:
+  - rule_id: SHYD_R1_EXACT_REFERENCE
+    pass: 1
+    version: 1
+    match_on:
+      - {left_identifier: ORDER_ID, right_identifier: ORDER_ID, comparison: exact}
+      - {left_identifier: NACH_TXN_REF, right_identifier: ORDER_ID, comparison: exact}
+    confidence: 1.0
+  - rule_id: SHYD_R2_NORMALIZED_REFERENCE
+    pass: 2
+    version: 1
+    match_on:
+      - {left_identifier: ORDER_ID, right_identifier: ORDER_ID, comparison: normalized_partial}
+    confidence: 0.85
+  - rule_id: SHYD_R3_AMOUNT_DATE
+    pass: 3
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 0.00}
+      date_field: transaction_date
+      date_tolerance_days: 2
+    confidence: 0.7
+  - rule_id: SHYD_R4_AMOUNT_COUNTERPARTY_DATE_INSTRUMENT
+    pass: 4
+    version: 1
+    conditions:
+      amount_tolerance: {type: absolute, value: 2.00}
+      date_field: transaction_date
+      date_tolerance_days: 3
+      counterparty_similarity_threshold: 0.8
+      # internal_ledger rows are always classified PAYMENT while the external
+      # feeds are never PAYMENT (see classification_rules above) -- they can
+      # never be instrument-equal across sources, so this must be "any".
+      instrument_type_match: any
+    confidence: 0.55
+
+tolerance_defaults:
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_tolerance_days: 2
+
+# Pass 5: a gross internal collection settles net of the aggregator's MDR,
+# GST on that MDR, Sahyadri's own platform commission, and TDS withheld by
+# the aggregator. That gap is checked here BEFORE it may become an exception.
+tax_fee_rules:
+  applicable_when:
+    internal_instrument_type: PAYMENT
+    external_instrument_type: PAYMENT_GATEWAY_SETTLEMENT
+  fee:
+    rate_percent: 2.0
+    verification_status: PROTOTYPE_ASSUMPTION
+    note: >
+      Illustrative payment-aggregator MDR rate. MDR is commercially
+      negotiated between merchant and aggregator, not a published regulatory
+      figure -- a real deployment must source this from Sahyadri's actual
+      merchant agreement.
+  tax_on_fee:
+    tax_rule_id: GST_ON_PAYMENT_GATEWAY_FEE_V1
+  commission:
+    label: Platform commission
+    rate_percent: 0.25
+    minimum_amount: 2.0
+    maximum_amount: null
+    verification_status: PROTOTYPE_ASSUMPTION
+    note: Illustrative platform commission retained by the aggregator.
+  statutory_charges:
+    - code: TDS_194O
+      label: TDS withheld by e-commerce operator
+      basis: GROSS
+      rate_percent: 1.0
+      enabled: true
+      verification_status: NOT_VERIFIED
+      source_authority: Income Tax Department, India
+      source_reference: Section 194-O, Income-tax Act 1961
+      note: >
+        Rate NOT independently verified during this build, and applicability
+        depends on operator status and threshold conditions. Illustrative.
+  rounding_tolerance: 0.02
+  date_field: transaction_date
+  date_tolerance_days: 3
+  confidence: 0.8
+
+# Pass 6: groups orders sharing a SETTLEMENT_BATCH_REF and compares the
+# groups' amount sums -- e.g. several customer collections bundled into one
+# daily aggregator settlement (N:1).
+aggregation_rules:
+  identifier_type: SETTLEMENT_BATCH_REF
+  rule_id: SHYD_PASS6_AGGREGATION
+  amount_tolerance: {type: absolute, value: 0.00}
+  date_field: transaction_date
+  date_tolerance_days: 2
+  confidence: 0.75
+
+exception_rules:
+  ageing_thresholds_days: {LOW: 3, MEDIUM: 7, HIGH: 15, CRITICAL: 30}

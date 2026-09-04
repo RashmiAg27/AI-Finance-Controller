@@ -1,0 +1,156 @@
+[
+  {
+    "gateway_txn_id": "PGTXN900001",
+    "order_id": "ORD200001",
+    "settled_at": "2026-09-14T18:30:00",
+    "net_amount": "2592.83",
+    "entry_type": "settlement",
+    "merchant_name": "R KUMAR",
+    "remarks": "settlement for ORD200001",
+    "_ground_truth_economic_id": "CB-EXACT-0001"
+  },
+  {
+    "gateway_txn_id": "PGTXN900002",
+    "order_id": "ORD200002",
+    "settled_at": "2026-09-18T18:30:00",
+    "net_amount": "2514.07",
+    "entry_type": "settlement",
+    "merchant_name": "S PATEL",
+    "remarks": "settlement for ORD200002",
+    "_ground_truth_economic_id": "CB-EXACT-0002"
+  },
+  {
+    "gateway_txn_id": "PGTXN900003",
+    "order_id": "ORD200003",
+    "settled_at": "2026-09-22T18:30:00",
+    "net_amount": "8651.18",
+    "entry_type": "settlement",
+    "merchant_name": "A SHARMA",
+    "remarks": "settlement for ORD200003",
+    "_ground_truth_economic_id": "CB-EXACT-0003"
+  },
+  {
+    "gateway_txn_id": "PGTXN900004",
+    "order_id": "ORD200004",
+    "settled_at": "2026-09-21T18:30:00",
+    "net_amount": "2832.93",
+    "entry_type": "settlement",
+    "merchant_name": "N REDDY",
+    "remarks": "settlement for ORD200004",
+    "_ground_truth_economic_id": "CB-EXACT-0004"
+  },
+  {
+    "gateway_txn_id": "PGTXN900005",
+    "order_id": "ORD200005",
+    "settled_at": "2026-09-22T18:30:00",
+    "net_amount": "6132.1",
+    "entry_type": "settlement",
+    "merchant_name": "S PATEL",
+    "remarks": "settlement for ORD200005",
+    "_ground_truth_economic_id": "CB-EXACT-0005"
+  },
+  {
+    "gateway_txn_id": "PGTXN900006",
+    "order_id": "ORD200006",
+    "settled_at": "2026-09-23T18:30:00",
+    "net_amount": "6805.03",
+    "entry_type": "settlement",
+    "merchant_name": "N REDDY",
+    "remarks": "settlement for ORD200006",
+    "_ground_truth_economic_id": "CB-EXACT-0006"
+  },
+  {
+    "gateway_txn_id": "PGTXN900007",
+    "order_id": "ORD200007",
+    "settled_at": "2026-09-04T18:30:00",
+    "net_amount": "5016.18",
+    "entry_type": "settlement",
+    "merchant_name": "R KUMAR",
+    "remarks": "settlement for ORD200007",
+    "_ground_truth_economic_id": "CB-EXACT-0007"
+  },
+  {
+    "gateway_txn_id": "PGTXN900008",
+    "order_id": "ORD200008",
+    "settled_at": "2026-09-17T18:30:00",
+    "net_amount": "7664.12",
+    "entry_type": "settlement",
+    "merchant_name": "R KUMAR",
+    "remarks": "settlement for ORD200008",
+    "_ground_truth_economic_id": "CB-EXACT-0008"
+  },
+  {
+    "gateway_txn_id": "PGTXN900009",
+    "order_id": "ORD200009",
+    "settled_at": "2026-09-19T18:30:00",
+    "net_amount": "5416.42",
+    "entry_type": "settlement",
+    "merchant_name": "N REDDY",
+    "remarks": "settlement for ORD200009",
+    "_ground_truth_economic_id": "CB-EXACT-0009"
+  },
+  {
+    "gateway_txn_id": "PGTXN900010",
+    "order_id": "ORD200010",
+    "settled_at": "2026-09-24T18:30:00",
+    "net_amount": "7672.52",
+    "entry_type": "settlement",
+    "merchant_name": "S PATEL",
+    "remarks": "settlement for ORD200010",
+    "_ground_truth_economic_id": "CB-EXACT-0010"
+  },
+  {
+    "gateway_txn_id": "PGBATCH950001",
+    "order_id": "",
+    "settled_at": "2026-09-11T20:00:00",
+    "net_amount": "2213.64",
+    "entry_type": "settlement",
+    "merchant_name": "BUNDLED SETTLEMENT",
+    "remarks": "bundled settlement for batch BATCHB800001",
+    "batch_ref": "BATCHB800001",
+    "_ground_truth_economic_id": "CB-BUNDLE-0001"
+  },
+  {
+    "gateway_txn_id": "PGTXNVAR960001",
+    "order_id": "ORDVAR300001",
+    "settled_at": "2026-09-15T18:30:00",
+    "net_amount": "14767.89",
+    "entry_type": "settlement",
+    "merchant_name": "R KUMAR",
+    "remarks": "settlement for ORDVAR300001, includes an undocumented deduction",
+    "_ground_truth_economic_id": "CB-UNEXPLAINED-0001"
+  },
+  {
+    "gateway_txn_id": "PGBATCH930001",
+    "order_id": "",
+    "settled_at": "2026-09-01T18:30:00",
+    "net_amount": "9074.50",
+    "entry_type": "settlement",
+    "merchant_name": "R KUMAR TRADERS",
+    "remarks": "aggregate settlement, MDR and GST on MDR, commission and TDS deducted",
+    "batch_ref": "",
+    "_ground_truth_economic_id": "SHYD-PG-CHARGES-0001"
+  },
+  {
+    "gateway_txn_id": "PGBATCH930002",
+    "order_id": "",
+    "settled_at": "2026-09-03T18:30:00",
+    "net_amount": "17215.46",
+    "entry_type": "settlement",
+    "merchant_name": "S PATEL ENTERPRISES",
+    "remarks": "aggregate settlement, MDR and GST on MDR, commission and TDS deducted",
+    "batch_ref": "",
+    "_ground_truth_economic_id": "SHYD-PG-CHARGES-0002"
+  },
+  {
+    "gateway_txn_id": "PGBATCH930003",
+    "order_id": "",
+    "settled_at": "2026-09-02T18:30:00",
+    "net_amount": "6608.96",
+    "entry_type": "settlement",
+    "merchant_name": "N REDDY AGENCIES",
+    "remarks": "aggregate settlement, MDR and GST on MDR, commission and TDS deducted",
+    "batch_ref": "",
+    "_ground_truth_economic_id": "SHYD-PG-CHARGES-0003"
+  }
+]

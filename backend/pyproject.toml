@@ -1,0 +1,44 @@
+[project]
+name = "ai-finance-controller"
+version = "0.1.0"
+description = "Multi-client financial reconciliation, tax/settlement, cash and AI controller platform (backend)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0",
+    "pyyaml>=6.0",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "rapidfuzz>=3.10",
+    "python-multipart>=0.0.12",
+    "google-genai>=1.0",
+    "anthropic>=0.39",
+    "openai>=1.60",
+    "scikit-learn>=1.5",
+    "numpy>=1.26",
+    # zoneinfo (stdlib) relies on the OS's IANA tz database, which Windows
+    # does not ship -- installed explicitly rather than relying on it coming
+    # in transitively via pandas, so Asia/Kolkata conversion can't silently
+    # break if that changes.
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,4 @@
+InternalRef,OrderId,PostedOn,Amount,DrCr,CustomerName,Notes,SettlementBatchRef,_ground_truth_economic_id
+SETLEXP00001,SETL770001,2026-09-03,9074.50,CR,PAYMENT AGGREGATOR,"Expected settlement SETL770001, gross 9414.36 net of charges",,SHYD-SETL-BANK-0001
+SETLEXP00002,SETL770002,2026-09-03,17215.46,CR,PAYMENT AGGREGATOR,"Expected settlement SETL770002, gross 17860.21 net of charges",,SHYD-SETL-BANK-0002
+SETLEXP00003,SETL770003,2026-09-04,6608.96,CR,PAYMENT AGGREGATOR,"Expected settlement SETL770003, gross 6856.47 net of charges",,SHYD-SETL-BANK-0003
