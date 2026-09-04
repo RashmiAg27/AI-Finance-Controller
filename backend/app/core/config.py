@@ -13,6 +13,16 @@ class Settings(BaseSettings):
     data_root: Path = PROJECT_ROOT / "data"
     configs_root: Path = BACKEND_ROOT / "configs" / "clients"
 
+    # Comma-separated list of allowed frontend origins for CORS. Defaults to
+    # the local Vite dev server; a deployed frontend's real origin (e.g.
+    # https://your-app.vercel.app) must be added via CORS_ORIGINS in .env or
+    # the hosting platform's environment variables -- see app.main.
+    cors_origins: str = "http://localhost:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
     # Four providers exist to prove the abstraction is real rather than
     # hard-wired to one vendor. Which one is active is decided by
     # agent_provider, or failing that by whichever key is present -- see
