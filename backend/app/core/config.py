@@ -29,9 +29,10 @@ class Settings(BaseSettings):
     # app.agent.provider.get_provider.
     gemini_api_key: str | None = None
     # gemini-2.5-flash is closed to new API keys and returns 404 for them, so
-    # the default has to be a currently-available model. Override with
-    # GEMINI_MODEL in .env if your key is entitled to a different one.
-    gemini_model: str = "gemini-3.6-flash"
+    # the default has to be a currently-available model. Confirmed reachable
+    # with a live call (2026-09-05). Override with GEMINI_MODEL in .env if
+    # your key is entitled to a different one.
+    gemini_model: str = "gemini-3.8-flash"
 
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"
